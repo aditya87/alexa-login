@@ -11,6 +11,7 @@ import (
 
 type server struct {
 	lastKeyword string
+	modified    bool
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -32,19 +33,24 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		s.lastKeyword = r.Keyword
+		s.modified = true
 		io.WriteString(w, "{}")
 	} else {
 		amazonURL := fmt.Sprintf("https://www.amazon.com/s/field-keywords=%s", s.lastKeyword)
-		resp, err := http.Get(amazonURL)
-		if err != nil {
-			http.Error(w, "Couldn't query amazon", http.StatusInternalServerError)
-			return
-		}
-		defer resp.Body.Close()
 
-		body, err := ioutil.ReadAll(resp.Body)
+		resp := struct {
+			AmazonURL string `json:"url"`
+			Modified  bool   `json:"modified"`
+		}{
+			AmazonURL: amazonURL,
+			Modified:  s.modified,
+		}
+
+		s.modified = false
+
+		body, err := json.Marshal(resp)
 		if err != nil {
-			http.Error(w, "Couldn't parse response from amazon", http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -56,6 +62,7 @@ func main() {
 	port := os.Getenv("PORT")
 	s := server{
 		lastKeyword: "echo",
+		modified:    false,
 	}
 	http.ListenAndServe(":"+port, &s)
 }
